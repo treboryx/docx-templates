@@ -9,12 +9,11 @@ extends:
   - plugin:import/typescript
   - plugin:jest/recommended
   - plugin:prettier/recommended
-  - prettier/@typescript-eslint
 plugins:
   - "@typescript-eslint"
   - jest
 rules:
-  eqeqeq: ['error', 'allow-null']
+  eqeqeq: ["error", "allow-null"]
   comma-dangle:
     - error
     - arrays: always-multiline
@@ -28,6 +27,10 @@ rules:
       peerDependencies: true
       optionalDependencies: false
   import/prefer-default-export: off
+  import/no-unused-modules: 
+    - error
+    - unusedExports: true
+      ignoreExports: ["./src/index.ts"]
   radix: error
   prefer-promise-reject-errors: error
   no-throw-literal: error

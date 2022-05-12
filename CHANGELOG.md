@@ -1,3 +1,23 @@
+## 4.9.2 (2022-04-04)
+- [PR 266](https://github.com/guigrpa/docx-templates/pull/266) Fix types for Deno bundle (by @mathe42).
+
+## 4.9.1 (2022-02-18)
+- [Issue #259](https://github.com/guigrpa/docx-templates/issues/259) Fix issue that caused inserted images to be overwritten when `createReport()` was invoked a second time on the resulting template.
+
+## 4.9.0 (2022-01-20)
+- Updated dependencies.
+- [PR 253](https://github.com/guigrpa/docx-templates/pull/253) Add support for Deno through the browser bundle. Thanks @mathe42!
+
+## 4.8.2 (2021-09-28)
+- [PR 233](https://github.com/guigrpa/docx-templates/pull/233) Prevent adding empty paragraph if cell contains altChunk. Thanks @pkozul!
+
+## 4.8.1 (2021-09-28)
+- [#239](https://github.com/guigrpa/docx-templates/issues/239) Fixed issue that prevented the `listCommands` function from detecting commands in the template's header and footer.
+
+## 4.8.0 (2021-08-06)
+- [#231](https://github.com/guigrpa/docx-templates/issues/231) The library now also comes with a pre-compiled and polyfilled browser build. See [documentation](https://github.com/guigrpa/docx-templates#polyfilled-browser-ready-bundle) in README. Thanks @mathe42!
+- [PR 229](https://github.com/guigrpa/docx-templates/pull/229) Minor change to how filenames of HTML snippets are formatted in the final .docx file so the resulting documents work with picky parsers.
+
 ## 4.7.0 (2021-07-12)
 * [#221](https://github.com/guigrpa/docx-templates/issues/221) New feature: user can now optionally specify image rotation when using IMAGE commands.
 * [#218](https://github.com/guigrpa/docx-templates/issues/218) Fixed bug that caused redundant copies of images to be inserted into the docx file.

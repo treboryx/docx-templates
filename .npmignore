@@ -30,9 +30,13 @@ coverage
 /test
 /package.js
 /ROADMAP.md
+/.prettierrc
+/.eslintignore
+/.prettierignore
 
 # Project-specific
 /src
 /examples
 /.github
 /lib/__tests__
+/rollup.config.js

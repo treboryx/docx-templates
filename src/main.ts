@@ -70,6 +70,34 @@ export async function parseTemplate(template: Buffer) {
   return { jsTemplate, mainDocument, zip, contentTypes };
 }
 
+async function prepSecondaryXMLs(
+  zip: JSZip,
+  main_doc_path: string,
+  options: CreateReportOptions
+): Promise<[Node, string][]> {
+  // Find all non-main XML files containing the headers, footers, etc.
+  const secondary_xml_files: string[] = [];
+  zip.forEach(async filePath => {
+    if (
+      XML_FILE_REGEX.test(filePath) &&
+      filePath !== `${TEMPLATE_PATH}/${main_doc_path}` &&
+      filePath.indexOf(`${TEMPLATE_PATH}/template`) !== 0
+    ) {
+      secondary_xml_files.push(filePath);
+    }
+  });
+
+  const prepped_secondaries: [Node, string][] = [];
+  for (const f of secondary_xml_files) {
+    const raw = await zipGetText(zip, f);
+    if (raw == null) throw new TemplateParseError(`${f} could not be read`);
+    const js0 = await parseXml(raw);
+    const js = preprocessTemplate(js0, options.cmdDelimiter);
+    prepped_secondaries.push([js, f]);
+  }
+  return prepped_secondaries;
+}
+
 /**
  * Create Report from docx template
  *
@@ -154,26 +182,11 @@ async function createReport(
     queryResult = data;
   }
 
-  // Find all other XML files (headers, footers, etc)
-  const secondary_xml_files: string[] = [];
-  zip.forEach(async filePath => {
-    if (
-      XML_FILE_REGEX.test(filePath) &&
-      filePath !== `${TEMPLATE_PATH}/${mainDocument}` &&
-      filePath.indexOf(`${TEMPLATE_PATH}/template`) !== 0
-    ) {
-      secondary_xml_files.push(filePath);
-    }
-  });
-
-  const prepped_secondaries: [Node, string][] = [];
-  for (const f of secondary_xml_files) {
-    const raw = await zipGetText(zip, f);
-    if (raw == null) throw new TemplateParseError(`${f} could not be read`);
-    const js0 = await parseXml(raw);
-    const js = preprocessTemplate(js0, createOptions.cmdDelimiter);
-    prepped_secondaries.push([js, f]);
-  }
+  const prepped_secondaries = await prepSecondaryXMLs(
+    zip,
+    mainDocument,
+    createOptions
+  );
 
   // Find the highest image IDs by scanning the main document and all secondary XMLs.
   const highest_img_id = Math.max(
@@ -207,9 +220,9 @@ async function createReport(
 
   let numImages = Object.keys(images1).length;
   let numHtmls = Object.keys(htmls1).length;
-  await processImages(images1, mainDocument, zip, TEMPLATE_PATH);
-  await processLinks(links1, mainDocument, zip, TEMPLATE_PATH);
-  await processHtmls(htmls1, mainDocument, zip, TEMPLATE_PATH);
+  await processImages(images1, mainDocument, zip);
+  await processLinks(links1, mainDocument, zip);
+  await processHtmls(htmls1, mainDocument, zip);
 
   for (const [js, filePath] of prepped_secondaries) {
     // Grab the last used (highest) image id from the main document's context, but create
@@ -233,9 +246,9 @@ async function createReport(
 
     const segments = filePath.split('/');
     const documentComponent = segments[segments.length - 1];
-    await processImages(images2, documentComponent, zip, TEMPLATE_PATH);
-    await processLinks(links2, mainDocument, zip, TEMPLATE_PATH);
-    await processHtmls(htmls2, mainDocument, zip, TEMPLATE_PATH);
+    await processImages(images2, documentComponent, zip);
+    await processLinks(links2, mainDocument, zip);
+    await processHtmls(htmls2, mainDocument, zip);
   }
 
   // Process [Content_Types].xml
@@ -316,27 +329,32 @@ export async function listCommands(
     fixSmartQuotes: false,
   };
 
-  const { jsTemplate } = await parseTemplate(template);
-
-  logger.debug('Preprocessing template...');
-  const prepped = preprocessTemplate(jsTemplate, opts.cmdDelimiter);
-
+  const { jsTemplate, mainDocument, zip } = await parseTemplate(template);
+  const secondaries = await prepSecondaryXMLs(zip, mainDocument, opts);
+  const xmls = [jsTemplate, ...secondaries.map(([js, path]) => js)];
   const commands: CommandSummary[] = [];
-  const ctx = newContext(opts);
-  await walkTemplate(undefined, prepped, ctx, async (data, node, ctx) => {
-    const raw = getCommand(ctx.cmd, ctx.shorthands, ctx.options.fixSmartQuotes);
-    ctx.cmd = ''; // flush the context
-    const { cmdName, cmdRest: code } = splitCommand(raw);
-    const type = cmdName as BuiltInCommand;
-    if (type != null && type !== 'CMD_NODE') {
-      commands.push({
-        raw,
-        type,
-        code,
-      });
-    }
-    return undefined;
-  });
+  for (const js of xmls) {
+    const prepped = preprocessTemplate(js, opts.cmdDelimiter);
+    const ctx = newContext(opts);
+    await walkTemplate(undefined, prepped, ctx, async (data, node, ctx) => {
+      const raw = getCommand(
+        ctx.cmd,
+        ctx.shorthands,
+        ctx.options.fixSmartQuotes
+      );
+      ctx.cmd = ''; // flush the context
+      const { cmdName, cmdRest: code } = splitCommand(raw);
+      const type = cmdName as BuiltInCommand;
+      if (type != null && type !== 'CMD_NODE') {
+        commands.push({
+          raw,
+          type,
+          code,
+        });
+      }
+      return undefined;
+    });
+  }
 
   return commands;
 }
@@ -437,53 +455,50 @@ export function getMainDoc(contentTypes: NonTextNode): string {
 const processImages = async (
   images: Images,
   documentComponent: string,
-  zip: JSZip,
-  templatePath: string
+  zip: JSZip
 ) => {
   logger.debug(`Processing images for ${documentComponent}...`);
   const imageIds = Object.keys(images);
-  if (imageIds.length) {
-    logger.debug('Completing document.xml.rels...');
-    const relsPath = `${templatePath}/_rels/${documentComponent}.rels`;
-    const rels = await getRelsFromZip(zip, relsPath);
-    for (let i = 0; i < imageIds.length; i++) {
-      const imageId = imageIds[i];
-      const { extension, data: imgData } = images[imageId];
-      const imgName = `template_${documentComponent}_image${i + 1}${extension}`;
-      logger.debug(`Writing image ${imageId} (${imgName})...`);
-      const imgPath = `${templatePath}/media/${imgName}`;
-      if (typeof imgData === 'string') {
-        zipSetBase64(zip, imgPath, imgData);
-      } else {
-        zipSetBinary(zip, imgPath, imgData);
-      }
-      addChild(
-        rels,
-        newNonTextNode('Relationship', {
-          Id: imageId,
-          Type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
-          Target: `media/${imgName}`,
-        })
-      );
+  if (!imageIds.length) return;
+  logger.debug('Completing document.xml.rels...');
+  const relsPath = `${TEMPLATE_PATH}/_rels/${documentComponent}.rels`;
+  const rels = await getRelsFromZip(zip, relsPath);
+  for (let i = 0; i < imageIds.length; i++) {
+    const imageId = imageIds[i];
+    const { extension, data: imgData } = images[imageId];
+    const imgName = `template_${documentComponent}_${imageId}${extension}`;
+    logger.debug(`Writing image ${imageId} (${imgName})...`);
+    const imgPath = `${TEMPLATE_PATH}/media/${imgName}`;
+    if (typeof imgData === 'string') {
+      zipSetBase64(zip, imgPath, imgData);
+    } else {
+      zipSetBinary(zip, imgPath, imgData);
     }
-    const finalRelsXml = buildXml(rels, {
-      literalXmlDelimiter: DEFAULT_LITERAL_XML_DELIMITER,
-    });
-    zipSetText(zip, relsPath, finalRelsXml);
+    addChild(
+      rels,
+      newNonTextNode('Relationship', {
+        Id: imageId,
+        Type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+        Target: `media/${imgName}`,
+      })
+    );
   }
+  const finalRelsXml = buildXml(rels, {
+    literalXmlDelimiter: DEFAULT_LITERAL_XML_DELIMITER,
+  });
+  zipSetText(zip, relsPath, finalRelsXml);
 };
 
 const processLinks = async (
   links: Links,
   documentComponent: string,
-  zip: JSZip,
-  templatePath: string
+  zip: JSZip
 ) => {
   logger.debug(`Processing links for ${documentComponent}...`);
   const linkIds = Object.keys(links);
   if (linkIds.length) {
     logger.debug('Completing document.xml.rels...');
-    const relsPath = `${templatePath}/_rels/${documentComponent}.rels`;
+    const relsPath = `${TEMPLATE_PATH}/_rels/${documentComponent}.rels`;
     const rels = await getRelsFromZip(zip, relsPath);
     for (const linkId of linkIds) {
       const { url } = links[linkId];
@@ -507,8 +522,7 @@ const processLinks = async (
 const processHtmls = async (
   htmls: Htmls,
   documentComponent: string,
-  zip: JSZip,
-  templatePath: string
+  zip: JSZip
 ) => {
   logger.debug(`Processing htmls for ${documentComponent}...`);
   const htmlIds = Object.keys(htmls);
@@ -516,13 +530,17 @@ const processHtmls = async (
     // Process rels
     logger.debug(`Completing document.xml.rels...`);
     const htmlFiles = [];
-    const relsPath = `${templatePath}/_rels/${documentComponent}.rels`;
+    const relsPath = `${TEMPLATE_PATH}/_rels/${documentComponent}.rels`;
     const rels = await getRelsFromZip(zip, relsPath);
     for (const htmlId of htmlIds) {
       const htmlData = htmls[htmlId];
-      const htmlName = `template_${documentComponent}_${htmlId}.html`;
+      // Replace all period characters in the filename to play nice with more picky parsers (like Docx4j)
+      const htmlName = `template_${documentComponent.replace(
+        /\./g,
+        '_'
+      )}_${htmlId}.html`;
       logger.debug(`Writing html ${htmlId} (${htmlName})...`);
-      const htmlPath = `${templatePath}/${htmlName}`;
+      const htmlPath = `${TEMPLATE_PATH}/${htmlName}`;
       htmlFiles.push(`/${htmlPath}`);
       zipSetText(zip, htmlPath, htmlData);
       addChild(

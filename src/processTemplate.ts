@@ -313,6 +313,7 @@ export async function walkTemplate(
         delete ctx.pendingHtmlNode;
       }
 
+
       // Replace the parent `w:p` node with the xml node(s)
       if (
         ctx.pendingXmlNode &&
@@ -340,11 +341,14 @@ export async function walkTemplate(
       }
 
       // `w:tc` nodes shouldn't be left with no `w:p` children; if that's the
+
       // case, add an empty `w:p` inside
       if (
         !nodeOut._fTextNode && // Flow-prevention
         nodeOut._tag === 'w:tc' &&
-        !nodeOut._children.filter(o => !o._fTextNode && o._tag === 'w:p').length
+        !nodeOut._children.filter(
+          o => !o._fTextNode && (o._tag === 'w:p' || o._tag === 'w:altChunk')
+        ).length
       ) {
         nodeOut._children.push({
           _parent: nodeOut,
@@ -585,7 +589,8 @@ const processCmd: CommandProcessor = async (
           try {
             await processImage(ctx, img);
           } catch (e) {
-            throw new ImageError(e.message, cmd);
+            if (!(e instanceof Error)) throw e;
+            throw new ImageError(e, cmd);
           }
         }
       }
@@ -627,6 +632,7 @@ const processCmd: CommandProcessor = async (
     } else throw new CommandSyntaxError(cmd);
     return;
   } catch (err) {
+    if (!(err instanceof Error)) throw err;
     if (ctx.options.errorHandler != null) {
       return ctx.options.errorHandler(err);
     }

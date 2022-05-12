@@ -108,10 +108,27 @@ const report = await createReport({
 
 Check out the [Node examples folder](https://github.com/guigrpa/docx-templates/tree/master/examples/example-node).
 
+# Deno usage
+You can use docx-templates in Deno! Just follow the Browser guide and import the polyfilled docx-templates bundle, for example from unpkg:
+
+```ts
+// @deno-types="https://unpkg.com/docx-templates/lib/bundled.d.ts"
+import { createReport } from 'https://unpkg.com/docx-templates/lib/browser.js';
+```
+
+> Note that you have to set `noSandbox: true` or bring your own sandbox with the `runJs` option.
 
 # Browser usage
 
-You can use docx-templates in the browser (yay!). Just as when using docx-templates in Node, you need to provide the template contents as a buffer-like object. For example, you can get a `File` object with:
+You can use docx-templates in the browser (yay!). Just as when using docx-templates in Node, you need to provide the template contents as a `Buffer`-like object. 
+
+For example when the template is on your server you can get it with something like:
+
+```js
+const template = await fetch('./template.docx').then(res => res.arrayBuffer())
+```
+
+Or if the user provides the template you can get a `File` object with:
 
 ```html
 <input type="file">
@@ -149,10 +166,21 @@ const readFileIntoArrayBuffer = fd =>
 
 You can find an example implementation of `saveDataToFile()` [in the Webpack example](https://github.com/guigrpa/docx-templates/blob/79119723ff1c009b5bbdd28016558da9b405742f/examples/example-webpack/client/index.js#L82).
 
-Check out the examples [using Webpack](https://github.com/guigrpa/docx-templates/tree/master/examples/example-webpack) and [using Browserify](https://github.com/guigrpa/docx-templates/tree/master/examples/example-browserify).
+Check out the examples [using Webpack](https://github.com/guigrpa/docx-templates/tree/master/examples/example-webpack) and [using Browserify](https://github.com/guigrpa/docx-templates/tree/master/examples/example-browserify) or you can use the browserified bundle directly as discussed below.
 
-## Browser compatibility caveat
-Note that the JavaScript code in your docx template will be run as-is by the browser. Transpilers like Babel can't see this code, and won't be able to polyfill it. This means that the JS code in your template needs to be compatible with the browsers you are targeting. In other words: don't use fancy modern syntax and functions in your template if you want older browsers, like IE11, to be able to render it.
+## Polyfilled browser-ready bundle
+As this library depends on the internal NodeJS modules `vm`, `stream`, `util`, `events` and the `Buffer` global, your build tools have to polyfill these modules when using the library in the browser. We provide a browser build wich includes the required polyfills. Its file size is about 300K uncompressed or 85K / 70K with gzip / brotli compression).
+
+You can import the library directly **as a module** using e.g. the unpkg.com CDN, like below, or you can host the `/lib/browser.js` bundle yourself.
+
+```ts
+import { createReport } from 'https://unpkg.com/docx-templates/lib/browser.js';
+```
+
+this is good for testing or prototyping but you should keep in mind that the `browser.js` is `es2017` code wich is supported by only 95% of users. If you have to support IE or old browser versions, you are better off compiling it to your target. Also see the support table for `es2017` [here](https://caniuse.com/sr_es8).
+
+## Browser template compatibility caveat
+Note that the JavaScript code in your .docx template will be run as-is by the browser. Transpilers like Babel can't see this code, and won't be able to polyfill it. This means that the JS code in your template needs to be compatible with the browsers you are targeting. In other words: don't use fancy modern syntax and functions in your template if you want older browsers, like IE11, to be able to render it.
 
 # Writing templates
 
@@ -538,7 +566,9 @@ const commands = await listCommands(template_buffer, ['{', '}']);
 ]
 ```
 
-The `getMetadata` function lets you extract the metadata fields from a document, such as the number of pages or words. Note that not all fields may be available, depending on the document.
+The `getMetadata` function lets you extract the metadata fields from a document, such as the number of pages or words. Note that this feature has a few limitations:
+- Not all fields may be available, depending on the document. 
+- These metadata fields, including the number of pages, are only updated by MS Word (or LibreOffice) when saving the document. Docx-templates does not alter these metadata fields, so the number of pages may not reflect the actual size of your rendered document (see issue [#240](https://github.com/guigrpa/docx-templates/issues/240)). Docx-templates can not reliably determine the number of pages in a document, as this requires a full-fledged docx renderer (e.g. MS Word).
 
 ```typescript
     import { getMetadata } from 'docx-templates';

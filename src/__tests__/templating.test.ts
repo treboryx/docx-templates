@@ -7,6 +7,7 @@ import QR from 'qrcode';
 import { createReport } from '../index';
 import { UserOptions } from '../types';
 import { setDebugLogSink } from '../debug';
+import JSZip from 'jszip';
 
 if (process.env.DEBUG) setDebugLogSink(console.log);
 
@@ -756,15 +757,33 @@ Morbi dignissim consequat ex, non finibus est faucibus sodales. Integer sed just
         const template = await fs.promises.readFile(
           path.join(__dirname, 'fixtures', 'htmls.docx')
         );
-        const result = await createReport(
-          {
-            noSandbox,
-            template,
-            data: {},
-          },
-          'JS'
-        );
-        expect(result).toMatchSnapshot();
+        const opts = {
+          noSandbox,
+          template,
+          data: {},
+        };
+        expect(await createReport(opts, 'JS')).toMatchSnapshot();
+
+        // Check the name of the HTML file in the resulting docx.
+        const zip = await JSZip.loadAsync(await createReport(opts));
+        expect(Object.keys(zip?.files ?? {})).toStrictEqual([
+          '[Content_Types].xml',
+          '_rels/.rels',
+          'word/_rels/document.xml.rels',
+          'word/document.xml',
+          'word/theme/theme1.xml',
+          'docProps/thumbnail.emf',
+          'word/settings.xml',
+          'word/fontTable.xml',
+          'word/webSettings.xml',
+          'docProps/core.xml',
+          'word/styles.xml',
+          'docProps/app.xml',
+          'word/',
+          'word/template_document_xml_html1.html',
+          'word/template_document_xml_html2.html',
+          'word/_rels/',
+        ]);
       });
 
       it('40 Throws on invalid command', async () => {
@@ -1101,9 +1120,7 @@ Morbi dignissim consequat ex, non finibus est faucibus sodales. Integer sed just
             template,
             data: {},
           })
-        ).rejects.toThrowError(
-          "Error executing command 'reverse(‘aubergine’)'. SyntaxError: Invalid or unexpected token"
-        );
+        ).rejects.toThrowErrorMatchingSnapshot();
 
         // Unless we use our superpower: the fixSmartQuotes flag!
         const result = await createReport(
@@ -1147,6 +1164,22 @@ Morbi dignissim consequat ex, non finibus est faucibus sodales. Integer sed just
               },
             },
             'JS'
+          )
+        ).toMatchSnapshot();
+      });
+
+      it('HTML in table (see PR #233)', async () => {
+        const template = await fs.promises.readFile(
+          path.join(__dirname, 'fixtures', 'tableWithHTML.docx')
+        );
+        expect(
+          await createReport(
+            {
+              noSandbox,
+              template,
+              data: {},
+            },
+            'XML'
           )
         ).toMatchSnapshot();
       });
