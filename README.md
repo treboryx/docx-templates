@@ -394,6 +394,26 @@ Takes the HTML resulting from evaluating a JavaScript snippet and converts it to
 `+++
 ```
 
+### `XML`
+
+Takes the literal XML string resulting from evaluating a JavaScript snippet and inserts it into the report directly. This is an alternative to using the `literalXml` delimiter:
+
+```
++++XML `
+<w:p><w:r><w:t>Created by literal XML command</w:t></w:r></w:p>
+`+++
+```
+If literal XML has more than one root, please wrap it under a `<fragment/>` root element:
+```
++++XML `
+<fragment>
+  <w:p><w:r><w:t>First paragraph</w:t></w:r></w:p>
+  <w:p><w:r><w:t>Second paragraph</w:t></w:r></w:p>
+  ...
+</fragment>
+`+++
+```
+
 ### `FOR` and `END-FOR`
 
 Loop over a group of elements (resulting from the evaluation of a JavaScript expression):

@@ -31,6 +31,7 @@ import {
   ObjectCommandResultError,
 } from './errors';
 import { logger } from './debug';
+import { parseXml } from './xml';
 
 export function newContext(options: CreateReportOptions, imageId = 0): Context {
   return {
@@ -312,7 +313,35 @@ export async function walkTemplate(
         delete ctx.pendingHtmlNode;
       }
 
-      // `w:tc` nodes shouldn't be left with no `w:p` or 'w:altChunk' children; if that's the
+
+      // Replace the parent `w:p` node with the xml node(s)
+      if (
+        ctx.pendingXmlNode &&
+        !nodeOut._fTextNode && // Flow-prevention
+        nodeOut._tag === 'w:p'
+      ) {
+        const xmlNode = ctx.pendingXmlNode;
+        const parent = nodeOut._parent;
+        if (parent) {
+          xmlNode._parent = parent;
+          parent._children.pop();
+          // check for fragment node
+          if (!xmlNode._fTextNode && xmlNode._tag === 'fragment') {
+            xmlNode._children.forEach(childNode => {
+              parent._children.push(childNode);
+            });
+          } else {
+            parent._children.push(xmlNode);
+          }
+          // Prevent containing paragraph or table row from being removed
+          ctx.buffers['w:p'].fInsertedText = true;
+          ctx.buffers['w:tr'].fInsertedText = true;
+        }
+        delete ctx.pendingXmlNode;
+      }
+
+      // `w:tc` nodes shouldn't be left with no `w:p` children; if that's the
+
       // case, add an empty `w:p` inside
       if (
         !nodeOut._fTextNode && // Flow-prevention
@@ -586,6 +615,17 @@ const processCmd: CommandProcessor = async (
           ctx
         );
         if (html != null) await processHtml(ctx, html);
+      }
+
+      // XML <code>
+    } else if (cmdName === 'XML') {
+      if (!isLoopExploring(ctx)) {
+        const xml: string | undefined = await runUserJsAndGetRaw(
+          data,
+          cmdRest,
+          ctx
+        );
+        if (xml != null) await processXml(ctx, xml);
       }
 
       // Invalid command
@@ -932,6 +972,11 @@ const processHtml = async (ctx: Context, data: string) => {
   const node = newNonTextNode;
   const html = node('w:altChunk', { 'r:id': relId });
   ctx.pendingHtmlNode = html;
+};
+
+const processXml = async (ctx: Context, data: string) => {
+  const xml = await parseXml(data);
+  ctx.pendingXmlNode = xml;
 };
 
 // ==========================================
